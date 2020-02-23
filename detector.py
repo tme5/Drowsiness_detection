@@ -71,12 +71,13 @@ class MyDectection(BaseDetection):
                 help="index of webcam on system")
         self.args = vars(self.ap.parse_args())
         self.EYE_AR_THRESH = 0.3
-        self.EYE_AR_CONSEC_FRAMES = 10
+        self.EYE_AR_CONSEC_FRAMES = 5
         self.YAWN_THRESH = 20
         self.eye_alarm = False
         self.yawn_alarm = False
         self.saying = False
         self.COUNTER = 0
+        self.window_width = 700
         print("[INFO] Loading the predictor and detector...")
         self.detector = dlib.get_frontal_face_detector()
         #detector = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")    #Faster but less accurate
@@ -88,30 +89,34 @@ class MyDectection(BaseDetection):
         time.sleep(0.5)
         
     def run_dectection(self):
+        show_enhanced_image = False
+        enhance_image = True
         while True:
             _frame = self.vs.read()
-            self.frame = imutils.resize(_frame, width=700)
-            #cv2.namedWindow('IMG')
-            gray = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
+            self.frame = imutils.resize(_frame, width=self.window_width)
             
-            # Try
-            #img_hsv = cv2.cvtColor(self.frame, cv2.COLOR_BGR2HSV)
-            #mask = ((img_hsv > np.array([0, 0, 230])).astype(np.float32) + (img_hsv > np.array([0, 0, 230])).astype(np.float32) * (-0.5) + 0.5)
-            #img_partly_darken = cv2.cvtColor(mask * img_hsv, cv2.COLOR_HSV2BGR)
+            if enhance_image:
+                # Converting image to LAB Color model
+                lab = cv2.cvtColor(self.frame, cv2.COLOR_BGR2LAB)
+                # Splitting the LAB image to different channels
+                l, a, b = cv2.split(lab)
+                # Applying CLAHE to L-channel---
+                clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+                cl = clahe.apply(l)
+                # Merge the CLAHE enhanced L-channel with the a and b channel
+                limg = cv2.merge((cl, a, b))
+                # Converting image from LAB Color model to RGB model
+                final = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)
+            else:
+                final = self.frame
+                
+            if show_enhanced_image:
+                self.frame = final
+                
+            gray = cv2.cvtColor(final, cv2.COLOR_BGR2GRAY)
+            rects = self.detector(gray, 0)
             
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-            cl1 = clahe.apply(gray)
-            
-            rects = self.detector(cl1, 0)
-            
-            #rects = detector.detectMultiScale(gray, scaleFactor=1.1, 
-            #    	minNeighbors=5, minSize=(30, 30),
-            #    	flags=cv2.CASCADE_SCALE_IMAGE)
-
             for rect in rects:
-            #for (x, y, w, h) in rects:
-            #    rect = dlib.rectangle(int(x), int(y), int(x + w),int(y + h))
-               
                 shape = self.predictor(gray, rect)
                 shape = face_utils.shape_to_np(shape)
             
@@ -132,41 +137,40 @@ class MyDectection(BaseDetection):
                 
                 # Insert indices in database table
                 self.sqlite_obj.insert_data(int(time.time()), ear, yawn_index)
+                self.BGR = (0, 255, 0)
                 
                 if ear < self.EYE_AR_THRESH:
                     self.COUNTER += 1
-            
                     if self.COUNTER >= self.EYE_AR_CONSEC_FRAMES:
                         if self.eye_alarm == False:
                             self.eye_alarm = True
                             print('wake up sir')
                             t = Thread(target=self.alarm, args=('wake up sir',))
-                            t.deamon = True
                             t.start()
-            
+                        
+                        self.BGR = (0, 0, 255)
                         cv2.putText(self.frame, "DROWSINESS ALERT!", (10, 30),
-                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-            
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.BGR, 2)
                 else:
                     self.COUNTER = 0
                     self.eye_alarm = False
             
                 if (yawn_index > self.YAWN_THRESH):
+                    self.BGR = (0, 255, 255)
                     cv2.putText(self.frame, "Yawn Alert", (10, 30),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.BGR, 2)
                     if self.yawn_alarm == False and self.saying == False:
                         self.yawn_alarm = True
                         print('take some fresh air sir')
                         t = Thread(target=self.alarm, args=('take some fresh air sir',))
-                        t.deamon = True
                         t.start()
                 else:
                     self.yawn_alarm = False
             
-                cv2.putText(self.frame, "EAR: {:.2f}".format(ear), (300, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                cv2.putText(self.frame, "YAWN: {:.2f}".format(yawn_index), (300, 60),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+                cv2.putText(self.frame, "EAR: {:.2f}".format(ear), (500, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.BGR, 2)
+                cv2.putText(self.frame, "YAWN: {:.2f}".format(yawn_index), (500, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, self.BGR, 2)
             
             cv2.imshow("Frame", self.frame)
             
