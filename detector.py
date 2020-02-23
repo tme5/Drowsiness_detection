@@ -1,5 +1,5 @@
 #python drowniness_yawn.py --webcam webcam_index
-
+from sqlite_db import SqliteDB
 from scipy.spatial import distance as dist
 from imutils.video import VideoStream
 from imutils import face_utils
@@ -17,21 +17,17 @@ class BaseDetection():
         pass
     
     def alarm(self, msg):
-        global eye_alarm
-        global yawn_alarm
-        global saying
-
-        while eye_alarm:
+        while self.eye_alarm:
             print('call')
             s = 'espeak "'+msg+'"'
             os.system(s)
 
         if yawn_alarm:
             print('call')
-            saying = True
+            self.saying = True
             s = 'espeak "' + msg + '"'
             os.system(s)
-            saying = False
+            self.saying = False
 
     def eye_aspect_ratio(self, eye):
         A = dist.euclidean(eye[1], eye[5])
@@ -78,16 +74,17 @@ class MyDectection(BaseDetection):
         self.detector = dlib.get_frontal_face_detector()
         #detector = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")    #Faster but less accurate
         self.predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
-
+        self.sqlite_obj = SqliteDB()
         print("[INFO] Starting Video Stream")
         #vs = VideoStream(src=args["webcam"]).start()
         self.vs = VideoStream(usePiCamera=True).start()       #//For Raspberry Pi
         time.sleep(0.5)
-
+        
     def run_dectection(self):
         while True:
             _frame = self.vs.read()
             self.frame = imutils.resize(_frame, width=450)
+            #cv2.namedWindow('IMG')
             gray = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
             rects = self.detector(gray, 0)
             #rects = detector.detectMultiScale(gray, scaleFactor=1.1, 
@@ -106,7 +103,7 @@ class MyDectection(BaseDetection):
                 leftEye = eye [1]
                 rightEye = eye[2]
             
-                distance = self.lip_distance(shape)
+                yawn_index = self.lip_distance(shape)
             
                 leftEyeHull = cv2.convexHull(leftEye)
                 rightEyeHull = cv2.convexHull(rightEye)
@@ -115,7 +112,10 @@ class MyDectection(BaseDetection):
             
                 lip = shape[48:60]
                 cv2.drawContours(self.frame, [lip], -1, (0, 255, 0), 1)
-            
+                
+                # Insert indices in database table
+                self.sqlite_obj.insert_data(int(time.time()), ear, yawn_index)
+                
                 if ear < self.EYE_AR_THRESH:
                     self.COUNTER += 1
             
@@ -134,7 +134,7 @@ class MyDectection(BaseDetection):
                     self.COUNTER = 0
                     self.eye_alarm = False
             
-                if (distance > self.YAWN_THRESH):
+                if (yawn_index > self.YAWN_THRESH):
                         cv2.putText(self.frame, "Yawn Alert", (10, 30),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
                         if self.yawn_alarm == False and self.saying == False:
@@ -148,18 +148,18 @@ class MyDectection(BaseDetection):
             
                 cv2.putText(self.frame, "EAR: {:.2f}".format(ear), (300, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-                cv2.putText(self.frame, "YAWN: {:.2f}".format(distance), (300, 60),
+                cv2.putText(self.frame, "YAWN: {:.2f}".format(yawn_index), (300, 60),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-
-
+            
             cv2.imshow("Frame", self.frame)
+            
             key = cv2.waitKey(1) & 0xFF
-
             if key == ord("q"):
                 break
 
         cv2.destroyAllWindows()
         self.vs.stop()
+        self.sqlite_obj.conn_close()
 
 if __name__ == '__main__':
     test_obj = MyDectection()

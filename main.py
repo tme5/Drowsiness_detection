@@ -1,4 +1,7 @@
 from detector import MyDectection
+from threading import Thread
 
-test_obj = MyDectection()
-test_obj.run_dectection()
+capture_thread = Thread(target = MyDectection().run_dectection(), name='capture_thread')
+
+capture_thread.start()
+
