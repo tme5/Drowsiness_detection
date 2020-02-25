@@ -62,16 +62,17 @@ class BaseDetection(object):
         distance = abs(top_mean[1] - low_mean[1])
         return distance
     
-    def get_face_of_interest(self, rects):
+    def get_face_of_interest(self, rects, window_area):
         if len(rects)>=1:
             max_area = 0
             max_face = None
-            #face = x,y,w,h
-            _data = [(face[2]*face[3], face) for face in rects]
-            #_data = [((face.right()-face.left())*(face.bottom()-face.top()), face) for face in rects]
+            _data = [((face.right()-face.left())*(face.bottom()-face.top()), face) for face in rects]
             (max_area, max_face) = max(_data,key=lambda item:item[1])
-            #return max_face
-            return dlib.rectangle(int(max_face[0]), int(max_face[1]), int(max_face[0] + max_face[2]),int(max_face[1] + max_face[3]))
+            if (max_area/window_area)>=0.06:
+                return max_face
+            else:
+                print("[INFO] Face area: {}, Window area: {}".format(max_area, window_area))
+                print("[INFO] You are not sufficiently close to camera")
         return None
 
 class MyDectection(BaseDetection):
@@ -96,8 +97,8 @@ class MyDectection(BaseDetection):
         self.enhance_image = True
         self.save_videostream = False
         print("[INFO] Loading the predictor and detector...")
-        #self.detector = dlib.get_frontal_face_detector()
-        self.detector = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")    #Faster but less accurate
+        self.detector = dlib.get_frontal_face_detector()
+        #detector = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")    #Faster but less accurate
         self.predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
         self.sqlite_obj = SqliteDB()
         print("[INFO] Starting Video Stream")
@@ -140,12 +141,10 @@ class MyDectection(BaseDetection):
                 self.frame = final
 
             gray = cv2.cvtColor(final, cv2.COLOR_BGR2GRAY)
-            rects = self.detector.detectMultiScale(gray, scaleFactor=1.1, 
-                	minNeighbors=5, minSize=(30, 30),
-                	flags=cv2.CASCADE_SCALE_IMAGE)
-
-            #rects = self.detector(gray, 0)
-            rect = self.get_face_of_interest(rects)
+            (w, h) = gray.shape
+            rects = self.detector(gray, 0)
+            
+            rect = self.get_face_of_interest(rects, (w*h))
             
             if rect:
                 shape = self.predictor(gray, rect)
