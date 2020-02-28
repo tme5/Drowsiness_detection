@@ -1,7 +1,4 @@
-from detector import MyDectection
-from threading import Thread
+from detector import MyDetection
 
-capture_thread = Thread(target = MyDectection().run_dectection(), name='capture_thread')
-
-capture_thread.start()
-
+md = MyDetection()
+md.run_detection()
